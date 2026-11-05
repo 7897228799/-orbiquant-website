@@ -65,6 +65,13 @@ class PhoneOtp(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+class PasswordResetToken(Base):
+    __tablename__ = 'promo_password_reset_tokens'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('promo_users.id', ondelete='CASCADE'), index=True, nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
 class LoginSession(Base):
     __tablename__ = 'promo_login_sessions'
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -153,6 +160,13 @@ class Register(BaseModel):
     email: str = Field(min_length=5,max_length=254)
     password: str = Field(min_length=10,max_length=200)
     contact_opt_in: bool = False
+
+class ForgotPasswordRequest(BaseModel):
+    email: str = Field(min_length=5,max_length=254)
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=30,max_length=250)
+    password: str = Field(min_length=10,max_length=200)
 
 class Login(BaseModel):
     email: str
@@ -394,3 +408,64 @@ def delete_account(request:Request,response:Response,user:User=Depends(current_u
     db.delete(user);db.commit()
     response.delete_cookie(COOKIE,path='/',secure=IS_PROD,samesite='lax')
     return {'ok':True}
+
+
+# Transactional password reset email (Resend HTTPS API). Requires verified domain/sender.
+# Secrets must be set only in Render environment, never in a Vite env or Git repository.
+def send_password_reset_email(destination: str, reset_url: str):
+    key = os.getenv('RESEND_API_KEY','').strip()
+    sender = os.getenv('RESET_FROM_EMAIL','').strip()
+    if not key or not sender:
+        raise HTTPException(503,'Password reset email is not configured yet. Please contact support.')
+    import httpx
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            r = client.post('https://api.resend.com/emails',
+                headers={'Authorization':f'Bearer {key}','Content-Type':'application/json'},
+                json={'from':sender,'to':[destination],'subject':'Reset your Orbiquant password',
+                      'text':'Use this one-time link to reset your Orbiquant password (valid for 15 minutes):\n'+reset_url+'\n\nIf you did not request this, ignore this email.'})
+            r.raise_for_status()
+    except (httpx.HTTPError, ValueError):
+        raise HTTPException(503,'Password reset email could not be sent. Please retry later.')
+
+@router.post('/password/forgot')
+def forgot_password(body:ForgotPasswordRequest,request:Request,db:Session=Depends(get_db)):
+    check_origin(request);throttle(request,'password-forgot',4,600)
+    email=body.email.strip().lower()
+    if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',email):
+        raise HTTPException(422,'Enter a valid email address')
+    # Do not reveal whether an account is registered.
+    generic={'message':'If that email is registered, a password reset link will be sent.'}
+    if not os.getenv('RESEND_API_KEY') or not os.getenv('RESET_FROM_EMAIL'):
+        raise HTTPException(503,'Password reset email is not configured yet. Please contact support.')
+    user=db.scalar(select(User).where(User.email==email))
+    if user is None:return generic
+    raw=secrets.token_urlsafe(40)
+    digest=hashlib.sha256(raw.encode()).hexdigest()
+    from urllib.parse import quote
+    base=os.getenv('PUBLIC_BASE_URL','https://orbiquant.in').strip().rstrip('/')
+    if base not in {'https://orbiquant.in','https://www.orbiquant.in'}:
+        raise HTTPException(503,'Reset URL configuration unavailable')
+    # Send before persisting challenge; email failure cannot create a dangling token.
+    send_password_reset_email(user.email,base+'/reset-password?token='+quote(raw,safe=''))
+    # Invalidate older links for this user.
+    for old in db.scalars(select(PasswordResetToken).where(PasswordResetToken.user_id==user.id)).all():db.delete(old)
+    db.add(PasswordResetToken(user_id=user.id,token_hash=digest,expires_at=now()+timedelta(minutes=15)))
+    db.commit()
+    return generic
+
+@router.post('/password/reset')
+def reset_password(body:ResetPasswordRequest,request:Request,db:Session=Depends(get_db)):
+    check_origin(request);throttle(request,'password-reset',8,600)
+    digest=hashlib.sha256(body.token.encode()).hexdigest()
+    challenge=db.scalar(select(PasswordResetToken).where(PasswordResetToken.token_hash==digest))
+    if challenge is None or challenge.expires_at<=now():
+        raise HTTPException(400,'Reset link is invalid or expired. Please request a new link.')
+    user=db.get(User,challenge.user_id)
+    if user is None:raise HTTPException(400,'Reset link is invalid or expired.')
+    user.password_hash=ph.hash(body.password)
+    user.failed_login_attempts=0;user.locked_until=None
+    for session in db.scalars(select(LoginSession).where(LoginSession.user_id==user.id)).all():db.delete(session)
+    for token in db.scalars(select(PasswordResetToken).where(PasswordResetToken.user_id==user.id)).all():db.delete(token)
+    db.commit()
+    return {'message':'Password updated. Sign in using your new password.'}
