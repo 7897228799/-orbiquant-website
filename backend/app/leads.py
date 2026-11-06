@@ -97,7 +97,7 @@ if DB_URL.startswith('sqlite:') and inspect(engine).has_table('promo_phone_otp')
             conn.execute(text('ALTER TABLE promo_phone_otp ADD COLUMN user_id INTEGER'))
 router = APIRouter(prefix='/api/auth', tags=['promo-account'])
 ph = PasswordHasher(time_cost=2, memory_cost=19456, parallelism=2)
-BROKERS = {'Zerodha','Angel One','Dhan','Motilal Oswal'}
+BROKERS = {'Zerodha','Angel One','Dhan','Kotak Securities'}
 COOKIE = 'orbiquant_promo_session'
 # Best-effort in-memory abuse throttle; add edge WAF/CAPTCHA before mass public rollout.
 RATE = {}
