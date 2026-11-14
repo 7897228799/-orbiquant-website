@@ -1,0 +1,93 @@
+/* Orbiquant cinematic per-load intro, account and broker-interest UI */
+.oq-intro{position:fixed;inset:0;z-index:2000;display:grid;place-items:center;overflow:hidden;background:#020205;animation:oqSplashExit 2.25s ease forwards;color:#fff}
+.oq-intro-grid{position:absolute;inset:-80px;background-image:linear-gradient(rgba(255,133,31,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,133,31,.06) 1px,transparent 1px);background-size:62px 62px;transform:perspective(500px) rotateX(60deg) scale(1.8);transform-origin:50% 80%;mask-image:linear-gradient(to bottom,transparent,black)}
+.oq-intro-halo{position:absolute;width:min(75vw,610px);aspect-ratio:1;border-radius:50%;background:radial-gradient(circle,rgba(255,122,20,.19),rgba(255,122,20,.02) 44%,transparent 72%);filter:blur(16px);animation:oqHalo 2.25s ease-in-out forwards}
+.oq-intro-logo{display:flex;align-items:center;flex-direction:column;gap:21px;position:relative;z-index:2;transform-origin:50% 50%;animation:oqLogoReveal 2.25s cubic-bezier(.2,.8,.2,1) forwards}
+.oq-intro-logo .brand img{width:clamp(210px,42vw,440px)!important;filter:drop-shadow(0 0 34px rgba(255,125,40,.33))}
+.oq-intro-logo>span{color:#ffaa74;font-size:clamp(8px,1.25vw,12px);letter-spacing:clamp(2px,.45vw,6px);font-weight:800;text-align:center}
+.oq-intro-trace{position:absolute;bottom:17%;height:2px;width:min(50vw,310px);background:linear-gradient(90deg,transparent,#ff822a,transparent);box-shadow:0 0 28px rgba(255,126,29,.7);animation:oqTrace 2.25s ease forwards}
+@keyframes oqLogoReveal{0%{opacity:0;transform:scale(.68);filter:blur(16px)}30%{opacity:1;transform:scale(1.02);filter:blur(0)}62%{opacity:1;transform:scale(1)}83%{opacity:1;transform:scale(1.14);filter:blur(0)}100%{opacity:0;transform:scale(1.8);filter:blur(22px)}}
+@keyframes oqSplashExit{0%,69%{opacity:1;visibility:visible}99%{opacity:0;visibility:visible}100%{opacity:0;visibility:hidden}}
+@keyframes oqHalo{30%{transform:scale(1.2)}82%{transform:scale(1.6)}100%{transform:scale(2.8);opacity:0}}
+@keyframes oqTrace{0%{width:0;opacity:0}30%,60%{opacity:1}100%{width:70%;opacity:0}}
+.oq-user-shell{min-height:100vh;background:radial-gradient(ellipse at 80% 15%,rgba(255,108,10,.12),transparent 37%),linear-gradient(145deg,#03040a,#080a11 65%,#08080b);color:#f5f5f7}
+.oq-user-nav{min-height:84px;display:flex;align-items:center;justify-content:space-between;padding:15px max(4vw,20px);border-bottom:1px solid rgba(255,132,38,.18);background:rgba(5,6,12,.78);backdrop-filter:blur(15px)}
+.oq-user-nav .brand img{max-width:190px}
+.oq-user-nav nav{display:flex;gap:25px;align-items:center}
+.oq-user-nav nav a{color:#abb1bb;font-size:13px;font-weight:700;text-decoration:none;transition:color .2s,transform .2s}
+.oq-user-nav nav a:hover{color:#ffae75;transform:scale(1.035)}
+.oq-auth-grid{max-width:1400px;margin:0 auto;min-height:calc(100vh - 165px);display:grid;grid-template-columns:1fr 1fr;align-items:stretch}
+.oq-auth-art{position:relative;padding:clamp(30px,6vw,88px);border-right:1px solid #33221b;display:flex;flex-direction:column;justify-content:center;overflow:hidden;isolation:isolate}
+.oq-auth-art::before{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at 35% 65%,rgba(244,106,28,.23),transparent 56%);z-index:-1}
+.oq-auth-art h2{font-size:clamp(38px,5vw,74px);max-width:640px;line-height:1.01;letter-spacing:-2px;margin:24px 0}
+.oq-auth-art h2 em,.oq-dash-heading h1 em{font-style:normal;color:#ff8a34}
+.oq-auth-art>p{color:#abb3be;line-height:1.9;max-width:520px;font-size:14px}
+.oq-auth-art-bull{height:240px;max-width:480px;background:url('./assets/trading-bull-scene.webp') center / contain no-repeat;filter:drop-shadow(0 0 28px rgba(255,130,39,.15));animation:oqBullHover 6s ease-in-out infinite}
+@keyframes oqBullHover{50%{transform:translateY(-9px) scale(1.035)}}
+.oq-auth-panel{padding:clamp(30px,6vw,90px);max-width:670px;margin:auto;width:100%}
+.oq-kicker{color:#fd9c60;font-size:10px;letter-spacing:2.4px;font-weight:900}
+.oq-auth-panel h1{font-size:clamp(29px,3.8vw,50px);letter-spacing:-1.5px;margin:14px 0}
+.oq-auth-panel>p{font-size:13px;color:#939caa;line-height:1.8}
+.oq-form{display:grid;gap:19px;margin-top:30px}
+.oq-form>label:not(.oq-check){display:grid;gap:10px;font-size:12px;color:#e0e4e9;font-weight:750}
+.oq-form input:not([type=checkbox]){width:100%;padding:16px 17px;color:#fff;border:1px solid #34343d;border-radius:12px;background:#13151e;outline:none;font-size:14px;transition:border-color .25s,box-shadow .25s}
+.oq-form input:focus{border-color:#ff963f;box-shadow:0 0 0 3px rgba(255,145,45,.14)}
+.oq-check{display:flex;gap:12px;align-items:flex-start;cursor:pointer;color:#a4acb9;font-size:12px;line-height:1.65}
+.oq-check input{accent-color:#ff852a;width:17px;height:17px;flex-shrink:0;margin-top:2px}
+.oq-check b{color:#fff}
+.oq-check small{display:block;color:#838d9b}
+.oq-cta{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:12px 22px;background:linear-gradient(135deg,#ffad60,#f47718);border:none;border-radius:11px;color:#19100a!important;font-weight:900;text-decoration:none;font-size:13px;cursor:pointer;transition:transform .3s,box-shadow .3s,filter .3s}
+.oq-cta:hover{transform:translateY(-3px) scale(1.027);box-shadow:0 8px 28px rgba(255,117,17,.25);filter:brightness(1.08)}
+.oq-cta:disabled{opacity:.6;cursor:wait}
+.oq-outline{display:inline-flex;justify-content:center;align-items:center;color:#ffb07b!important;border:1px solid #854c2a;background:#221710;border-radius:11px;padding:12px 20px;text-decoration:none;font-size:12px;font-weight:800;transition:transform .25s}
+.oq-outline:hover{transform:scale(1.03)}
+.oq-switch{color:#929ba8;font-size:12px;margin-top:28px}.oq-switch a,.oq-disclaimer a,.oq-privacy a,.oq-auth-footer a{color:#ff9a54}
+.oq-disclaimer{display:block;color:#757f8c;line-height:1.7;margin-top:24px}
+.oq-auth-error,.oq-alert{padding:14px 16px;border-radius:10px;background:#16271e;color:#72dfa8;font-size:12px;border:1px solid #325d47}.oq-auth-error,.oq-alert.oq-danger{background:#321818;color:#ffaca0;border-color:#75403d}
+.oq-auth-footer{padding:26px 4vw;color:#788290;font-size:11px;text-align:center;border-top:1px solid #292630}
+.oq-auth-wait{background:#06070b;color:#efc09d;padding:20vh 20px;text-align:center;min-height:100vh}
+.oq-dashboard{max-width:1270px;margin:auto;padding:65px 4vw 75px;min-height:calc(100vh - 165px)}
+.oq-dash-heading{display:flex;justify-content:space-between;align-items:center;gap:22px;margin-bottom:35px}
+.oq-dash-heading h1{font-size:clamp(35px,4vw,59px);line-height:1.05;letter-spacing:-1.7px;margin:15px 0}
+.oq-dash-heading p{font-size:13px;color:#95a1b0;line-height:1.8;max-width:770px}
+.oq-profile-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.oq-glass{border-radius:18px;border:1px solid #303039;background:linear-gradient(150deg,rgba(23,24,34,.96),rgba(12,12,19,.97));padding:31px;min-width:0;box-shadow:0 10px 45px rgba(0,0,0,.19);transition:transform .3s,border-color .3s,box-shadow .3s}
+.oq-glass:hover{transform:translateY(-4px) scale(1.01);border-color:#825032;box-shadow:0 18px 55px rgba(0,0,0,.35)}
+.oq-glass h2{margin:15px 0 10px;overflow-wrap:anywhere;font-size:22px;color:#fff}
+.oq-glass p{font-size:12px;line-height:1.75;color:#8994a2}
+.oq-divider{height:1px;background:#303039;margin:26px 0}
+.oq-broker-choices{display:grid;gap:12px;margin-top:22px;grid-template-columns:1fr 1fr}
+.oq-broker-choice{display:flex;gap:10px;align-items:center;padding:13px;border:1px solid #343540;background:#1c1c25;border-radius:10px;color:#ddd;font-size:12px;cursor:pointer}
+.oq-broker-choice:hover{border-color:#ed862f}.oq-broker-choice input{accent-color:#fc8f36}
+.oq-dashboard-cta{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-top:24px;padding:25px 30px;border:1px solid #533623;background:linear-gradient(100deg,#231a17,#11141d);border-radius:16px}
+.oq-dashboard-cta div{display:grid;gap:7px}.oq-dashboard-cta strong{font-size:16px}.oq-dashboard-cta span{font-size:12px;color:#a0a7af}
+.oq-quiet{background:transparent;border:1px solid #594435;border-radius:9px;padding:13px 19px;color:#ffc092;cursor:pointer}
+.oq-delete{background:none;border:0;color:#b17e7c;text-decoration:underline;margin-top:34px;cursor:pointer;font-size:11px}
+.oq-brokers-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:17px}
+.oq-brokers-list .oq-glass{display:flex;flex-direction:column;gap:10px}
+.oq-broker-number{font-size:11px;color:#ff9b55;font-weight:900}
+.oq-broker-status{color:#dfac82;border:1px solid #5d3b28;padding:10px;border-radius:8px;font-size:10px;line-height:1.5;margin-top:auto}
+.oq-brokers-list a{font-size:12px;color:#ffad6f;text-decoration:none;font-weight:850;margin-top:8px}
+.oq-privacy{max-width:850px;margin:auto;padding:70px 5vw 130px;min-height:75vh}
+.oq-privacy h1{font-size:clamp(33px,4vw,50px)}.oq-privacy p{color:#aab3bd;line-height:1.9;font-size:14px}
+.oq-reg-banner{padding:40px max(4vw,20px);margin:auto;max-width:1450px;display:flex;justify-content:space-between;gap:20px;align-items:center;background:linear-gradient(90deg,rgba(36,25,20,.7),rgba(12,13,20,.7));border-top:1px solid #3e2a22;border-bottom:1px solid #3e2a22}
+.oq-reg-banner h2{font-size:clamp(26px,3vw,40px);letter-spacing:-1.5px;margin:14px 0}.oq-reg-banner em{color:#ff9d5d;font-style:normal}
+.oq-reg-banner p{color:#9ba4b1;font-size:12px;max-width:580px;line-height:1.7}
+.oq-reg-actions{display:flex;align-items:center;gap:13px;flex-wrap:wrap}
+.oq-privacy-link{font-size:11px;color:#d8a480!important;text-decoration:none}
+.oq-privacy-link:hover{color:#ffe3c9!important}
+/* Consistent subtle hover emphasis site-wide; no layout jumping of long body text. */
+.promo-landing{background:#040509!important}
+.promo-nav .public-nav-links a:hover{font-weight:850;transform:scale(1.028)}
+.promo-feature-card:hover,.promo-ticker:hover,.promo-plan:hover{transform:translateY(-6px) scale(1.025)!important}
+.promo-feature-card:hover h3,.promo-plan:hover h3,.promo-ticker:hover strong{color:#fff;letter-spacing:.02px;text-shadow:0 0 15px rgba(255,156,61,.26)}
+.promo-landing .brand img:hover{transform:scale(1.035)}
+@media(max-width:1050px){.oq-brokers-list{grid-template-columns:1fr 1fr}.oq-profile-grid{grid-template-columns:1fr}}
+@media(max-width:800px){.oq-auth-grid{grid-template-columns:1fr}.oq-auth-art{display:none}.oq-auth-panel{padding:55px 25px}.oq-user-nav .brand img{max-width:140px}.oq-user-nav nav{gap:12px}.oq-user-nav nav a{font-size:11px}.oq-dash-heading,.oq-dashboard-cta,.oq-reg-banner{flex-direction:column;align-items:flex-start}.oq-reg-actions{width:100%}.oq-reg-actions>a{flex:1}}
+@media(max-width:480px){.oq-brokers-list,.oq-broker-choices{grid-template-columns:1fr}.oq-user-nav nav a:first-child{display:none}.oq-dashboard{padding:38px 18px}.oq-glass{padding:22px}.oq-intro-logo .brand img{max-width:250px}.oq-auth-panel h1{font-size:34px}}
+@media(prefers-reduced-motion:reduce){.oq-intro{display:none}.oq-auth-art-bull{animation:none}.oq-glass:hover,.oq-cta:hover{transform:none!important}}
+
+/* Auth form mobile responsiveness */
+.oq-auth-panel,.oq-auth-panel *{box-sizing:border-box}
+.oq-auth-panel input{max-width:100%;min-width:0}
+@media(max-width:800px){.oq-auth-grid{min-height:auto;overflow-x:clip}.oq-auth-panel{padding:28px 18px 36px;max-width:100%}.oq-auth-panel h1{font-size:clamp(25px,6vw,34px);line-height:1.15}.oq-form{gap:14px}.oq-form input:not([type=checkbox]){font-size:16px;padding:13px 14px}.oq-form .oq-cta{width:100%;min-height:46px}.oq-auth-art{min-height:220px}}

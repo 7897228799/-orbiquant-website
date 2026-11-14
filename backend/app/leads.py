@@ -15,7 +15,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError, VerificationError
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, create_engine, select, text, inspect
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, create_engine, select, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker, Session
 
 MODE = os.getenv('APP_ENV', 'development').lower()
@@ -45,30 +45,18 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     email: Mapped[str] = mapped_column(String(254), unique=True, index=True, nullable=False)
+    phone: Mapped[str | None] = mapped_column(String(16), unique=True, index=True, nullable=True)
     password_hash: Mapped[str] = mapped_column(String(300), nullable=False)
-    phone: Mapped[str | None] = mapped_column(String(15), unique=True, index=True, nullable=True)
     contact_opt_in: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     broker_interests: Mapped[str] = mapped_column(String(250), default='[]', nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-class PhoneOtp(Base):
-    __tablename__ = 'promo_phone_otp'
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    phone: Mapped[str] = mapped_column(String(15), unique=True, nullable=False, index=True)
-    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    purpose: Mapped[str] = mapped_column(String(12), default='login', nullable=False)
-    user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    resend_after: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-
 class PasswordResetToken(Base):
     __tablename__ = 'promo_password_reset_tokens'
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey('promo_users.id', ondelete='CASCADE'), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey('promo_users.id',ondelete='CASCADE'), index=True, nullable=False)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
@@ -79,25 +67,19 @@ class LoginSession(Base):
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
-# Existing local SQLite databases need a backward-compatible additive column migration.
-# PostgreSQL production uses the reviewed SQL migration supplied separately.
-if DB_URL.startswith('sqlite:') and inspect(engine).has_table('promo_users'):
-    cols={col['name'] for col in inspect(engine).get_columns('promo_users')}
-    if 'phone' not in cols:
-        with engine.begin() as conn:
-            conn.execute(text('ALTER TABLE promo_users ADD COLUMN phone VARCHAR(15)'))
-            conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS ix_promo_users_phone ON promo_users (phone)'))
 Base.metadata.create_all(engine)
-if DB_URL.startswith('sqlite:') and inspect(engine).has_table('promo_phone_otp'):
-    cols={col['name'] for col in inspect(engine).get_columns('promo_phone_otp')}
-    with engine.begin() as conn:
-        if 'purpose' not in cols:
-            conn.execute(text("ALTER TABLE promo_phone_otp ADD COLUMN purpose VARCHAR(12) NOT NULL DEFAULT 'login'"))
-        if 'user_id' not in cols:
-            conn.execute(text('ALTER TABLE promo_phone_otp ADD COLUMN user_id INTEGER'))
+# Safe additive migration for existing SQLite/PostgreSQL installations.
+with engine.begin() as conn:
+    cols={c['name'] for c in inspect(engine).get_columns('promo_users')}
+    if 'phone' not in cols:
+        conn.execute(text('ALTER TABLE promo_users ADD COLUMN phone VARCHAR(16)'))
+    if engine.dialect.name == 'sqlite':
+        conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS ix_promo_users_phone ON promo_users (phone)'))
+    else:
+        conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS ix_promo_users_phone ON promo_users (phone)'))
 router = APIRouter(prefix='/api/auth', tags=['promo-account'])
 ph = PasswordHasher(time_cost=2, memory_cost=19456, parallelism=2)
-BROKERS = {'Zerodha','Angel One','Dhan','Kotak Securities'}
+BROKERS = {'Zerodha','Angel One','Dhan','Motilal Oswal'}
 COOKIE = 'orbiquant_promo_session'
 # Best-effort in-memory abuse throttle; add edge WAF/CAPTCHA before mass public rollout.
 RATE = {}
@@ -119,7 +101,7 @@ def throttle(request, key, limit=12, window=60):
 def check_origin(request: Request):
     origin = request.headers.get('origin')
     if not origin: return
-    allowed = {f'http://{host}:{port}' for host in ('localhost','127.0.0.1') for port in range(5173,5178)}
+    allowed = {'http://localhost:5173','http://localhost:5174','http://localhost:5175','http://127.0.0.1:5173'}
     allowed |= {x.strip().rstrip('/') for x in os.getenv('ALLOWED_ORIGINS','').split(',') if x.strip()}
     public = os.getenv('PUBLIC_BASE_URL','').rstrip('/')
     if public: allowed.add(public)
@@ -158,46 +140,20 @@ def sign_in(response, user, db):
 class Register(BaseModel):
     name: str = Field(min_length=2,max_length=100)
     email: str = Field(min_length=5,max_length=254)
+    phone: str = Field(min_length=10,max_length=16)
     password: str = Field(min_length=10,max_length=200)
     contact_opt_in: bool = False
 
-class ForgotPasswordRequest(BaseModel):
+class Login(BaseModel):
+    identifier: str = Field(min_length=3,max_length=254)
+    password: str = Field(min_length=1,max_length=200)
+
+class ForgotPassword(BaseModel):
     email: str = Field(min_length=5,max_length=254)
 
-class ResetPasswordRequest(BaseModel):
+class ResetPassword(BaseModel):
     token: str = Field(min_length=30,max_length=250)
     password: str = Field(min_length=10,max_length=200)
-
-class Login(BaseModel):
-    email: str
-    password: str
-
-class PhoneRequest(BaseModel):
-    phone: str
-
-class PhoneVerify(BaseModel):
-    phone: str
-    otp: str = Field(min_length=6,max_length=6)
-
-def normalize_phone(value: str):
-    digits=re.sub(r'[\s()\-]', '', value.strip())
-    if re.fullmatch(r'[6-9]\d{9}', digits): return '+91'+digits
-    if re.fullmatch(r'(?:\+91|91)[6-9]\d{9}', digits): return '+91'+digits[-10:]
-    raise HTTPException(422,'Enter a valid Indian mobile number (10 digits).')
-
-def seconds_left(until):
-    return max(1,int((until-now()).total_seconds())+1)
-
-def send_sms(phone: str, message: str):
-    # No fake delivery or user-visible OTP. IAM role credentials, never frontend keys.
-    if os.getenv('OTP_SMS_PROVIDER','').lower() != 'aws_sns':
-        raise HTTPException(503,'SMS OTP is not configured. Please use email/password login for now.')
-    try:
-        import boto3
-        boto3.client('sns',region_name=os.getenv('AWS_REGION','ap-south-1')).publish(PhoneNumber=phone,Message=message,MessageAttributes={'AWS.SNS.SMS.SMSType':{'DataType':'String','StringValue':'Transactional'}})
-    except Exception:
-        raise HTTPException(503,'Unable to deliver OTP right now. Please retry later.')
-
 
 class Preference(BaseModel):
     contact_opt_in: bool
@@ -210,10 +166,15 @@ def register(body:Register, request:Request, response:Response, db:Session=Depen
     check_origin(request); throttle(request,'register',30,600)
     email=body.email.strip().lower(); name=body.name.strip()
     if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',email): raise HTTPException(422,'Enter a valid email')
+    phone=re.sub(r'[\s()-]','',body.phone)
+    if re.fullmatch(r'[6-9][0-9]{9}',phone): phone='+91'+phone
+    if not re.fullmatch(r'\+[1-9][0-9]{7,14}',phone): raise HTTPException(422,'Enter a valid mobile number with country code')
     if len(name)<2: raise HTTPException(422,'Enter your name')
     if db.scalar(select(User).where(User.email==email)):
         raise HTTPException(409,'Account already exists. Please sign in.')
-    user=User(name=name,email=email,password_hash=ph.hash(body.password),contact_opt_in=body.contact_opt_in)
+    if db.scalar(select(User).where(User.phone==phone)):
+        raise HTTPException(409,'Mobile number is already registered.')
+    user=User(name=name,email=email,phone=phone,password_hash=ph.hash(body.password),contact_opt_in=body.contact_opt_in)
     db.add(user)
     try: db.commit();db.refresh(user)
     except Exception:
@@ -224,11 +185,15 @@ def register(body:Register, request:Request, response:Response, db:Session=Depen
 @router.post('/login')
 def login(body:Login,request:Request,response:Response,db:Session=Depends(get_db)):
     check_origin(request); throttle(request,'login',15,120)
-    email=body.email.strip().lower()
-    user=db.scalar(select(User).where(User.email==email))
+    identifier=body.identifier.strip().lower()
+    phone=re.sub(r'[\s()-]','',identifier)
+    if re.fullmatch(r'[6-9][0-9]{9}',phone): phone='+91'+phone
+    user=db.scalar(select(User).where(User.email==identifier))
+    if user is None and re.fullmatch(r'\+[1-9][0-9]{7,14}',phone):
+        user=db.scalar(select(User).where(User.phone==phone))
     if not user: raise HTTPException(401,'Incorrect email or password')
     if user.locked_until and user.locked_until>now():
-        raise HTTPException(429,f'Account temporarily locked. Retry in {seconds_left(user.locked_until)} seconds.',headers={'Retry-After':str(seconds_left(user.locked_until))})
+        raise HTTPException(429,'Account temporarily locked. Try again in 15 minutes.')
     try:
         valid=ph.verify(user.password_hash,body.password)
     except (VerifyMismatchError,VerificationError):
@@ -239,135 +204,52 @@ def login(body:Login,request:Request,response:Response,db:Session=Depends(get_db
             user.locked_until=now()+timedelta(minutes=15)
             user.failed_login_attempts=0
         db.commit()
-        if user.locked_until and user.locked_until>now():
-            raise HTTPException(429,f'Five failed attempts. Retry in {seconds_left(user.locked_until)} seconds.',headers={'Retry-After':str(seconds_left(user.locked_until))})
         raise HTTPException(401,'Incorrect email or password')
     user.failed_login_attempts=0;user.locked_until=None
     db.commit();sign_in(response,user,db)
     return {'user':public_user(user)}
 
-@router.post('/phone/request-otp')
-def request_phone_otp(body:PhoneRequest,request:Request,db:Session=Depends(get_db)):
-    check_origin(request);throttle(request,'otp-request',6,600)
-    phone=normalize_phone(body.phone)
-    if os.getenv('OTP_SMS_PROVIDER','').lower()!='aws_sns':
-        raise HTTPException(503,'SMS OTP is not configured. Please use email/password login for now.')
-    existing=db.scalar(select(PhoneOtp).where(PhoneOtp.phone==phone))
-    current=now()
-    if existing and existing.locked_until and existing.locked_until>current:
-        delay=seconds_left(existing.locked_until)
-        raise HTTPException(429,f'Too many OTP failures. Retry in {delay} seconds.',headers={'Retry-After':str(delay)})
-    if existing and existing.purpose != 'login':
-        raise HTTPException(429,'Mobile verification is in progress. Retry later.')
-    if existing and existing.resend_after>current:
-        delay=seconds_left(existing.resend_after)
-        raise HTTPException(429,f'Please wait {delay} seconds before resending.',headers={'Retry-After':str(delay)})
-    # For unregistered numbers, do not send an OTP or disclose account existence.
-    user=db.scalar(select(User).where(User.phone==phone))
-    if not user:
-        return {'message':'If this number is registered, an OTP will arrive shortly.','resend_after_seconds':60}
-    if user.locked_until and user.locked_until>current:
-        delay=seconds_left(user.locked_until)
-        raise HTTPException(429,f'Account locked. Retry in {delay} seconds.',headers={'Retry-After':str(delay)})
-    code=f'{secrets.randbelow(1000000):06d}'
-    hashed=hmac.new(SECRET.encode(),f'phone-otp:{phone}:{code}'.encode(),hashlib.sha256).hexdigest()
-    # Send first; never claim success or store a new challenge after delivery failure.
-    send_sms(phone,f'Orbiquant login OTP: {code}. Valid for 5 minutes. Do not share this code.')
-    challenge=existing or PhoneOtp(phone=phone,code_hash=hashed,expires_at=current+timedelta(minutes=5),resend_after=current+timedelta(seconds=60))
-    challenge.purpose='login'
-    challenge.user_id=None
-    challenge.code_hash=hashed
-    challenge.expires_at=current+timedelta(minutes=5)
-    challenge.resend_after=current+timedelta(seconds=60)
-    challenge.attempts=0
-    challenge.locked_until=None
-    db.add(challenge);db.commit()
-    return {'message':'If this number is registered, an OTP will arrive shortly.','resend_after_seconds':60}
+def send_reset_email(to_email: str, link: str):
+    key=os.getenv('RESEND_API_KEY','').strip(); sender=os.getenv('RESET_FROM_EMAIL','').strip()
+    if not key or not sender: raise HTTPException(503,'Password recovery email is not configured. Contact support.')
+    import httpx
+    try:
+        with httpx.Client(timeout=12) as client:
+            r=client.post('https://api.resend.com/emails',headers={'Authorization':f'Bearer {key}'},json={
+                'from':sender,'to':[to_email],'subject':'Reset your Orbiquant password',
+                'text':f'Use this secure link within 15 minutes to reset your password:\n{link}\nIf you did not request this, ignore this email.'})
+            r.raise_for_status()
+    except httpx.HTTPError:
+        raise HTTPException(503,'Could not send reset email. Please try again later.')
 
-@router.post('/phone/verify-otp')
-def verify_phone_otp(body:PhoneVerify,request:Request,response:Response,db:Session=Depends(get_db)):
-    check_origin(request);throttle(request,'otp-verify',20,600)
-    phone=normalize_phone(body.phone)
-    entry=db.scalar(select(PhoneOtp).where(PhoneOtp.phone==phone))
-    user=db.scalar(select(User).where(User.phone==phone))
-    if not entry or not user or entry.purpose!='login': raise HTTPException(401,'Invalid or expired OTP.')
-    current=now()
-    if user.locked_until and user.locked_until>current:
-        delay=seconds_left(user.locked_until)
-        raise HTTPException(429,f'Account locked. Retry in {delay} seconds.',headers={'Retry-After':str(delay)})
-    if entry.locked_until and entry.locked_until>current:
-        delay=seconds_left(entry.locked_until)
-        raise HTTPException(429,f'Too many OTP failures. Retry in {delay} seconds.',headers={'Retry-After':str(delay)})
-    if entry.expires_at<current: raise HTTPException(401,'OTP expired. Request another OTP.')
-    attempt=hmac.new(SECRET.encode(),f'phone-otp:{phone}:{body.otp}'.encode(),hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(attempt,entry.code_hash):
-        entry.attempts+=1
-        if entry.attempts>=5:
-            entry.locked_until=current+timedelta(minutes=15)
-            user.locked_until=entry.locked_until
-        db.commit()
-        if entry.locked_until:
-            delay=seconds_left(entry.locked_until)
-            raise HTTPException(429,f'Five incorrect OTPs. Retry in {delay} seconds.',headers={'Retry-After':str(delay)})
-        raise HTTPException(401,'Invalid OTP.')
-    db.delete(entry)
-    user.failed_login_attempts=0;user.locked_until=None
-    db.commit();sign_in(response,user,db)
-    return {'user':public_user(user)}
+@router.post('/password/forgot')
+def forgot_password(body:ForgotPassword,request:Request,db:Session=Depends(get_db)):
+    check_origin(request);throttle(request,'password-forgot',4,600)
+    email=body.email.strip().lower()
+    if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',email): raise HTTPException(422,'Enter a valid email')
+    user=db.scalar(select(User).where(User.email==email))
+    if user:
+        raw=secrets.token_urlsafe(40);digest=hashlib.sha256(raw.encode()).hexdigest()
+        base=os.getenv('PUBLIC_BASE_URL','https://orbiquant.in').rstrip('/')
+        if base not in {'https://orbiquant.in','https://www.orbiquant.in'}: raise HTTPException(503,'Reset URL is not configured')
+        from urllib.parse import quote
+        send_reset_email(user.email,base+'/reset-password?token='+quote(raw,safe=''))
+        for old in db.scalars(select(PasswordResetToken).where(PasswordResetToken.user_id==user.id)).all(): db.delete(old)
+        db.add(PasswordResetToken(user_id=user.id,token_hash=digest,expires_at=now()+timedelta(minutes=15)));db.commit()
+    return {'message':'If the email is registered, a password reset link will be sent.'}
 
-@router.post('/phone/link/request')
-def phone_link_request(body:PhoneRequest,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    check_origin(request);throttle(request,'phone-link',5,600)
-    phone=normalize_phone(body.phone)
-    if os.getenv('OTP_SMS_PROVIDER','').lower()!='aws_sns':
-        raise HTTPException(503,'SMS OTP is not configured yet. Existing email login remains available.')
-    linked=db.scalar(select(User).where(User.phone==phone))
-    if linked and linked.id!=user.id:
-        raise HTTPException(409,'This mobile number is already linked to an account.')
-    record=db.scalar(select(PhoneOtp).where(PhoneOtp.phone==phone))
-    current=now()
-    if record and record.locked_until and record.locked_until>current:
-        delay=seconds_left(record.locked_until)
-        raise HTTPException(429,f'Too many OTP failures. Retry in {delay} seconds.',headers={'Retry-After':str(delay)})
-    if record and record.resend_after>current:
-        delay=seconds_left(record.resend_after)
-        raise HTTPException(429,f'Please wait {delay} seconds before resending.',headers={'Retry-After':str(delay)})
-    code=f'{secrets.randbelow(1000000):06d}'
-    hashed=hmac.new(SECRET.encode(),f'phone-otp:{phone}:{code}'.encode(),hashlib.sha256).hexdigest()
-    send_sms(phone,f'Orbiquant mobile verification OTP: {code}. Valid for 5 minutes. Do not share this code.')
-    record=record or PhoneOtp(phone=phone,code_hash=hashed,expires_at=current+timedelta(minutes=5),resend_after=current+timedelta(seconds=60))
-    record.purpose='link';record.user_id=user.id;record.code_hash=hashed
-    record.expires_at=current+timedelta(minutes=5);record.resend_after=current+timedelta(seconds=60)
-    record.attempts=0;record.locked_until=None
-    db.add(record);db.commit()
-    return {'message':'Verification OTP sent.','resend_after_seconds':60}
-
-@router.post('/phone/link/verify')
-def phone_link_verify(body:PhoneVerify,request:Request,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    check_origin(request);throttle(request,'phone-link-verify',15,600)
-    phone=normalize_phone(body.phone)
-    record=db.scalar(select(PhoneOtp).where(PhoneOtp.phone==phone))
-    if not record or record.purpose!='link' or record.user_id!=user.id:
-        raise HTTPException(401,'Invalid or expired OTP.')
-    current=now()
-    if record.locked_until and record.locked_until>current:
-        delay=seconds_left(record.locked_until)
-        raise HTTPException(429,f'Too many OTP failures. Retry in {delay} seconds.',headers={'Retry-After':str(delay)})
-    if record.expires_at<current:raise HTTPException(401,'OTP expired. Request another OTP.')
-    attempt=hmac.new(SECRET.encode(),f'phone-otp:{phone}:{body.otp}'.encode(),hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(attempt,record.code_hash):
-        record.attempts+=1
-        if record.attempts>=5:record.locked_until=current+timedelta(minutes=15)
-        db.commit()
-        if record.locked_until:
-            delay=seconds_left(record.locked_until)
-            raise HTTPException(429,f'Five incorrect OTPs. Retry in {delay} seconds.',headers={'Retry-After':str(delay)})
-        raise HTTPException(401,'Invalid OTP.')
-    if db.scalar(select(User).where(User.phone==phone,User.id!=user.id)):
-        raise HTTPException(409,'This mobile number is already linked to another account.')
-    user.phone=phone
-    db.delete(record);db.commit()
-    return {'user':public_user(user)}
+@router.post('/password/reset')
+def reset_password(body:ResetPassword,request:Request,db:Session=Depends(get_db)):
+    check_origin(request);throttle(request,'password-reset',8,600)
+    digest=hashlib.sha256(body.token.encode()).hexdigest()
+    rec=db.scalar(select(PasswordResetToken).where(PasswordResetToken.token_hash==digest))
+    if not rec or rec.expires_at<=now(): raise HTTPException(400,'Reset link is invalid or expired. Request a new one.')
+    user=db.get(User,rec.user_id)
+    if not user: raise HTTPException(400,'Reset link is invalid or expired.')
+    user.password_hash=ph.hash(body.password);user.failed_login_attempts=0;user.locked_until=None
+    for session in db.scalars(select(LoginSession).where(LoginSession.user_id==user.id)).all(): db.delete(session)
+    for token in db.scalars(select(PasswordResetToken).where(PasswordResetToken.user_id==user.id)).all(): db.delete(token)
+    db.commit();return {'message':'Password updated. Please sign in with your new password.'}
 
 @router.get('/me')
 def me(user:User=Depends(current_user)):
@@ -402,70 +284,6 @@ def delete_account(request:Request,response:Response,user:User=Depends(current_u
     for item in db.scalars(select(LoginSession).where(LoginSession.user_id==user.id)).all(): db.delete(item)
     from .performance import Trade
     db.execute(__import__('sqlalchemy').delete(Trade).where(Trade.user_id==user.id))
-    if user.phone:
-        challenge=db.scalar(select(PhoneOtp).where(PhoneOtp.phone==user.phone))
-        if challenge: db.delete(challenge)
     db.delete(user);db.commit()
     response.delete_cookie(COOKIE,path='/',secure=IS_PROD,samesite='lax')
     return {'ok':True}
-
-
-# Transactional password reset email (Resend HTTPS API). Requires verified domain/sender.
-# Secrets must be set only in Render environment, never in a Vite env or Git repository.
-def send_password_reset_email(destination: str, reset_url: str):
-    key = os.getenv('RESEND_API_KEY','').strip()
-    sender = os.getenv('RESET_FROM_EMAIL','').strip()
-    if not key or not sender:
-        raise HTTPException(503,'Password reset email is not configured yet. Please contact support.')
-    import httpx
-    try:
-        with httpx.Client(timeout=10.0) as client:
-            r = client.post('https://api.resend.com/emails',
-                headers={'Authorization':f'Bearer {key}','Content-Type':'application/json'},
-                json={'from':sender,'to':[destination],'subject':'Reset your Orbiquant password',
-                      'text':'Use this one-time link to reset your Orbiquant password (valid for 15 minutes):\n'+reset_url+'\n\nIf you did not request this, ignore this email.'})
-            r.raise_for_status()
-    except (httpx.HTTPError, ValueError):
-        raise HTTPException(503,'Password reset email could not be sent. Please retry later.')
-
-@router.post('/password/forgot')
-def forgot_password(body:ForgotPasswordRequest,request:Request,db:Session=Depends(get_db)):
-    check_origin(request);throttle(request,'password-forgot',4,600)
-    email=body.email.strip().lower()
-    if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',email):
-        raise HTTPException(422,'Enter a valid email address')
-    # Do not reveal whether an account is registered.
-    generic={'message':'If that email is registered, a password reset link will be sent.'}
-    if not os.getenv('RESEND_API_KEY') or not os.getenv('RESET_FROM_EMAIL'):
-        raise HTTPException(503,'Password reset email is not configured yet. Please contact support.')
-    user=db.scalar(select(User).where(User.email==email))
-    if user is None:return generic
-    raw=secrets.token_urlsafe(40)
-    digest=hashlib.sha256(raw.encode()).hexdigest()
-    from urllib.parse import quote
-    base=os.getenv('PUBLIC_BASE_URL','https://orbiquant.in').strip().rstrip('/')
-    if base not in {'https://orbiquant.in','https://www.orbiquant.in'}:
-        raise HTTPException(503,'Reset URL configuration unavailable')
-    # Send before persisting challenge; email failure cannot create a dangling token.
-    send_password_reset_email(user.email,base+'/reset-password?token='+quote(raw,safe=''))
-    # Invalidate older links for this user.
-    for old in db.scalars(select(PasswordResetToken).where(PasswordResetToken.user_id==user.id)).all():db.delete(old)
-    db.add(PasswordResetToken(user_id=user.id,token_hash=digest,expires_at=now()+timedelta(minutes=15)))
-    db.commit()
-    return generic
-
-@router.post('/password/reset')
-def reset_password(body:ResetPasswordRequest,request:Request,db:Session=Depends(get_db)):
-    check_origin(request);throttle(request,'password-reset',8,600)
-    digest=hashlib.sha256(body.token.encode()).hexdigest()
-    challenge=db.scalar(select(PasswordResetToken).where(PasswordResetToken.token_hash==digest))
-    if challenge is None or challenge.expires_at<=now():
-        raise HTTPException(400,'Reset link is invalid or expired. Please request a new link.')
-    user=db.get(User,challenge.user_id)
-    if user is None:raise HTTPException(400,'Reset link is invalid or expired.')
-    user.password_hash=ph.hash(body.password)
-    user.failed_login_attempts=0;user.locked_until=None
-    for session in db.scalars(select(LoginSession).where(LoginSession.user_id==user.id)).all():db.delete(session)
-    for token in db.scalars(select(PasswordResetToken).where(PasswordResetToken.user_id==user.id)).all():db.delete(token)
-    db.commit()
-    return {'message':'Password updated. Sign in using your new password.'}
