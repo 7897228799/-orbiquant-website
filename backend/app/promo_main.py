@@ -122,6 +122,8 @@ from .local_broker_market import router as local_market_router
 app.include_router(local_market_router)
 from .angel_live_ws import router as angel_stream_router
 app.include_router(angel_stream_router)
+from .payments import router as payments_router
+app.include_router(payments_router)
 # Always respond 404 for other API paths, even when a SPA frontend is mounted at /.
 @app.api_route('/api/{rest_of_path:path}',methods=['GET','POST','PUT','PATCH','DELETE'])
 def reject_other_api(rest_of_path:str):
